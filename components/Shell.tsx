@@ -4,11 +4,14 @@ import { usePathname, useRouter } from "next/navigation";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
+  { href: "/profiles", label: "Account Profiles", icon: "👤" },
   { href: "/groups", label: "Facebook Groups", icon: "👥" },
   { href: "/import", label: "Spreadsheet", icon: "📥" },
   { href: "/campaigns", label: "Campaign Manager", icon: "📣" },
+  { href: "/media", label: "Image Library", icon: "🖼️" },
   { href: "/scheduler", label: "Posting Scheduler", icon: "🗓️" },
   { href: "/control", label: "AI Agent Control", icon: "⏯️" },
+  { href: "/worker", label: "Worker Health", icon: "💓" },
   { href: "/analytics", label: "Click Analytics", icon: "📈" },
   { href: "/history", label: "Posting History", icon: "🕘" },
   { href: "/notifications", label: "Notifications", icon: "🔔" },

@@ -12,12 +12,18 @@ export type Campaign = {
   id: string; name: string; caption: string; destination_url: string;
   tracking_code: string; enabled: boolean; created_at: string;
 };
+export type TaskStatus =
+  | "scheduled" | "queued" | "processing" | "submitted"
+  | "published" | "pending_approval" | "manual_action"
+  | "failed" | "skipped" | "cancelled" | "needs_review";
 export type Task = {
   id: string; group_id: string; campaign_id: string;
   scheduled_at: string | null; timezone: string;
-  status: "queued" | "processing" | "posted" | "pending_approval" | "failed" | "needs_review" | "skipped";
+  status: TaskStatus;
   post_link: string | null; error: string | null; attempts: number;
   idempotency_key: string; created_at: string; updated_at: string;
+  // AI planning trace — why this task was selected
+  plan_reason: string | null;
 };
 export type ClickEvent = {
   id: string; campaign_id: string; task_id: string | null;
@@ -27,6 +33,26 @@ export type LogRow = {
   id: string; task_id: string | null; event: string;
   detail: string | null; created_at: string;
 };
+// Up to 5 separately tracked Facebook account profiles
+export type Profile = {
+  id: string; label: string; fb_name: string | null; notes: string | null;
+  enabled: boolean;
+  health: "ok" | "locked" | "restricted" | "unknown";
+  last_activity: string | null; last_error: string | null;
+  created_at: string;
+};
+// Uploaded campaign images (stored in Vercel Blob)
+export type Asset = {
+  id: string; campaign_id: string | null; filename: string;
+  url: string; size: number; uploaded_at: string;
+};
+// Per-attempt record for a posting task
+export type PostingAttempt = {
+  id: string; task_id: string; attempt_no: number;
+  started_at: string; finished_at: string | null;
+  result: "success" | "temp_fail" | "perm_fail";
+  detail: string | null; post_link: string | null;
+};
 export type DB = {
   groups: Group[];
   campaigns: Campaign[];
@@ -34,6 +60,9 @@ export type DB = {
   click_events: ClickEvent[];
   activity_log: LogRow[];
   worker_control: { paused: boolean; updated_at: string };
+  profiles: Profile[];
+  assets: Asset[];
+  posting_attempts: PostingAttempt[];
 };
 
 const KEY = "fb-posting-data/data.json";
@@ -46,6 +75,9 @@ function emptyDB(): DB {
     click_events: [],
     activity_log: [],
     worker_control: { paused: false, updated_at: new Date().toISOString() },
+    profiles: [],
+    assets: [],
+    posting_attempts: [],
   };
 }
 

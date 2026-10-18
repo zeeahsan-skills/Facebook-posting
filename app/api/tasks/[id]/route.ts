@@ -16,8 +16,18 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     t.attempts = 0;
     t.updated_at = nowISO();
     await logEvent(db, "TASK_RETRIED", `Task requeued`, t.id);
-  } else if (body.status && ["queued", "skipped", "needs_review"].includes(body.status)) {
+  } else if (body.action === "cancel") {
+    t.status = "cancelled";
+    t.updated_at = nowISO();
+    await logEvent(db, "TASK_CANCELLED", `Task cancelled by user`, t.id);
+  } else if (body.status && [
+    "scheduled", "queued", "processing", "submitted", "published",
+    "pending_approval", "manual_action", "failed", "skipped",
+    "cancelled", "needs_review",
+  ].includes(body.status)) {
     t.status = body.status;
+    if (body.post_link !== undefined) t.post_link = body.post_link || null;
+    if (body.error !== undefined) t.error = body.error || null;
     t.updated_at = nowISO();
     await logEvent(db, "TASK_UPDATED", `Status -> ${body.status}`, t.id);
   } else {
