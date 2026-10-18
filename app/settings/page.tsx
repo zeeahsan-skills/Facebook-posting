@@ -1,24 +1,19 @@
 "use client";
-import { useEffect, useState } from "react";
 import Shell from "../../components/Shell";
-import { card, btnGhost } from "../../components/ui";
-import { createClient } from "../../lib/supabase-client";
+import { card } from "../../components/ui";
 
 export default function SettingsPage() {
-  const [email, setEmail] = useState("");
-
-  useEffect(() => {
-    createClient().auth.getUser().then(({ data }) => setEmail(data.user?.email || ""));
-  }, []);
-
   return (
     <Shell>
       <h1 className="mb-6 text-2xl font-bold">Settings</h1>
 
       <div className={`${card} max-w-2xl space-y-6`}>
         <div>
-          <p className="text-xs uppercase tracking-wider text-zinc-500">Account</p>
-          <p className="mt-1 text-sm text-zinc-200">{email || "—"}</p>
+          <p className="text-xs uppercase tracking-wider text-zinc-500">Data Storage</p>
+          <p className="mt-1 text-sm text-zinc-400">
+            Your data is stored in your private Vercel Blob store, accessible only with your
+            project's token. Export or delete your data anytime from the Dashboard and History pages.
+          </p>
         </div>
 
         <div>
@@ -47,10 +42,10 @@ export default function SettingsPage() {
         </div>
 
         <div>
-          <p className="text-xs uppercase tracking-wider text-zinc-500">Data & Privacy</p>
+          <p className="text-xs uppercase tracking-wider text-zinc-500">Change Password</p>
           <p className="mt-1 text-sm text-zinc-400">
-            Your groups, campaigns, tasks and clicks are isolated per account (Row Level Security).
-            Export or delete your data anytime from the Dashboard and History pages.
+            The dashboard password is set via the <code className="text-zinc-200">APP_PASSWORD</code>{" "}
+            environment variable in Vercel → Settings → Environment Variables.
           </p>
         </div>
       </div>

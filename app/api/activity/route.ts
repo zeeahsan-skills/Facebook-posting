@@ -1,15 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireUser, unauthorized, notConfigured, server } from "../../../lib/api-auth";
+import { needAuth } from "../../../lib/api-auth";
+import { readDB } from "../../../lib/db";
 
-export async function GET() {
-  if (!server()) return notConfigured();
-  const { supabase, user } = await requireUser();
-  if (!user) return unauthorized();
-  const { data, error } = await supabase
-    .from("activity_log")
-    .select("id,event,detail,created_at")
-    .order("created_at", { ascending: false })
-    .limit(100);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ log: data });
+export async function GET(request: Request) {
+  const deny = await needAuth(request);
+  if (deny) return deny;
+  const db = await readDB();
+  return NextResponse.json({ log: db.activity_log.slice(0, 100) });
 }

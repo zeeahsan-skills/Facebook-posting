@@ -1,30 +1,26 @@
 import { NextResponse } from "next/server";
-import { requireUser, unauthorized, notConfigured, server } from "../../../../lib/api-auth";
+import { needAuth } from "../../../../lib/api-auth";
+import { readDB, writeDB } from "../../../../lib/db";
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
-  if (!server()) return notConfigured();
-  const { supabase, user } = await requireUser();
-  if (!user) return unauthorized();
+  const deny = await needAuth(request);
+  if (deny) return deny;
   const body = await request.json();
-  const updates: Record<string, any> = {};
-  for (const k of ["name", "url", "country", "category"]) {
-    if (body[k] !== undefined) updates[k] = body[k]?.trim() || null;
+  const db = await readDB();
+  const g = db.groups.find((x) => x.id === params.id);
+  if (!g) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  for (const k of ["name", "url", "country", "category"] as const) {
+    if (body[k] !== undefined) (g as any)[k] = body[k]?.trim() || null;
   }
-  const { data, error } = await supabase
-    .from("groups")
-    .update(updates)
-    .eq("id", params.id)
-    .select()
-    .single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ group: data });
+  await writeDB(db);
+  return NextResponse.json({ group: g });
 }
 
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
-  if (!server()) return notConfigured();
-  const { supabase, user } = await requireUser();
-  if (!user) return unauthorized();
-  const { error } = await supabase.from("groups").delete().eq("id", params.id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const deny = await needAuth(request);
+  if (deny) return deny;
+  const db = await readDB();
+  db.groups = db.groups.filter((x) => x.id !== params.id);
+  await writeDB(db);
   return NextResponse.json({ ok: true });
 }

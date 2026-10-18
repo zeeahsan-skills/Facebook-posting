@@ -1,40 +1,34 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { createHash } from "crypto";
+import { readDB, writeDB, uid, nowISO } from "../../../../lib/db";
 
 // Public click tracker: /api/track/[code] -> log click -> 302 to destination
 export async function GET(
   request: Request,
   { params }: { params: { code: string } }
 ) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceKey) {
+  let db;
+  try {
+    db = await readDB();
+  } catch {
     return NextResponse.json({ error: "Not configured" }, { status: 503 });
   }
-  const supabase = createClient(url, serviceKey);
-
-  const { data: campaign } = await supabase
-    .from("campaigns")
-    .select("id, destination_url")
-    .eq("tracking_code", params.code)
-    .single();
-
+  const campaign = db.campaigns.find((c) => c.tracking_code === params.code);
   if (!campaign) {
     return NextResponse.json({ error: "Unknown tracking link" }, { status: 404 });
   }
 
-  // Best-effort click log (never block the redirect)
   try {
-    const req = request as any;
-    const ip =
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-    await supabase.from("click_events").insert({
+    const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    db.click_events.push({
+      id: uid(),
       campaign_id: campaign.id,
-      referrer: req.headers.get("referer") || null,
-      country: null, // enriched later if GeoIP is added
-      ip_hash: createHash("sha256").update(ip).digest("hex").slice(0, 16),
+      task_id: null,
+      clicked_at: nowISO(),
+      referrer: request.headers.get("referer"),
+      country: null,
+      ip_hash: uid().slice(0, 16),
     });
+    await writeDB(db);
   } catch {
     /* logging must never break the redirect */
   }

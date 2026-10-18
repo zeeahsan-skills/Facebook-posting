@@ -1,24 +1,15 @@
 import { NextResponse } from "next/server";
-import { createServerSupabase } from "./supabase-server";
+import { verifyToken, AUTH_COOKIE } from "./auth";
 
-export async function requireUser() {
-  const supabase = createServerSupabase();
-  const { data: { user } } = await supabase.auth.getUser();
-  return { supabase, user };
+export async function isAuthed(request: Request): Promise<boolean> {
+  const cookie = request.headers.get("cookie") || "";
+  const m = cookie.match(new RegExp(`${AUTH_COOKIE}=([^;]+)`));
+  return verifyToken(m?.[1]);
 }
 
-export function unauthorized() {
-  return NextResponse.json({ error: "Not signed in" }, { status: 401 });
-}
-
-export function notConfigured() {
-  return NextResponse.json(
-    { error: "Supabase not configured. Add environment variables first." },
-    { status: 503 }
-  );
-}
-
-export function server() {
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return null;
-  return true;
+export async function needAuth(request: Request) {
+  if (!(await isAuthed(request))) {
+    return NextResponse.json({ error: "Not signed in" }, { status: 401 });
+  }
+  return null;
 }

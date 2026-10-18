@@ -1,37 +1,23 @@
 import { NextResponse } from "next/server";
-import { requireUser, unauthorized, notConfigured, server } from "../../../lib/api-auth";
+import { needAuth } from "../../../lib/api-auth";
+import { readDB, writeDB, logEvent, nowISO } from "../../../lib/db";
 
-// Worker control: pause / resume the background posting worker
-export async function GET() {
-  if (!server()) return notConfigured();
-  const { supabase, user } = await requireUser();
-  if (!user) return unauthorized();
-  const { data } = await supabase
-    .from("worker_control")
-    .select("paused")
-    .eq("user_id", user.id)
-    .single();
-  return NextResponse.json({ paused: data?.paused ?? false });
+export async function GET(request: Request) {
+  const deny = await needAuth(request);
+  if (deny) return deny;
+  const db = await readDB();
+  return NextResponse.json({ paused: db.worker_control.paused });
 }
 
 export async function POST(request: Request) {
-  if (!server()) return notConfigured();
-  const { supabase, user } = await requireUser();
-  if (!user) return unauthorized();
+  const deny = await needAuth(request);
+  if (deny) return deny;
   const body = await request.json();
   const paused = body.paused === true;
-
-  const { error } = await supabase.from("worker_control").upsert(
-    { user_id: user.id, paused, updated_at: new Date().toISOString() },
-    { onConflict: "user_id" }
-  );
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  await supabase.from("activity_log").insert({
-    user_id: user.id,
-    event: paused ? "WORKER_PAUSED" : "WORKER_RESUMED",
-    detail: paused ? "Posting paused by user" : "Posting resumed by user",
-  });
-
+  const db = await readDB();
+  db.worker_control = { paused, updated_at: nowISO() };
+  await logEvent(db, paused ? "WORKER_PAUSED" : "WORKER_RESUMED",
+    paused ? "Posting paused by user" : "Posting resumed by user");
+  await writeDB(db);
   return NextResponse.json({ paused });
 }

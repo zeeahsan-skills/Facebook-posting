@@ -1,32 +1,29 @@
 import { NextResponse } from "next/server";
-import { requireUser, unauthorized, notConfigured, server } from "../../../../lib/api-auth";
+import { needAuth } from "../../../../lib/api-auth";
+import { readDB, writeDB } from "../../../../lib/db";
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
-  if (!server()) return notConfigured();
-  const { supabase, user } = await requireUser();
-  if (!user) return unauthorized();
+  const deny = await needAuth(request);
+  if (deny) return deny;
   const body = await request.json();
-  const updates: Record<string, any> = {};
-  for (const k of ["name", "caption", "destination_url", "enabled"]) {
+  const db = await readDB();
+  const c = db.campaigns.find((x) => x.id === params.id);
+  if (!c) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  for (const k of ["name", "caption", "destination_url", "enabled"] as const) {
     if (body[k] !== undefined) {
-      updates[k] = typeof body[k] === "string" ? body[k].trim() || null : body[k];
+      (c as any)[k] = typeof body[k] === "string" ? body[k].trim() || null : body[k];
     }
   }
-  const { data, error } = await supabase
-    .from("campaigns")
-    .update(updates)
-    .eq("id", params.id)
-    .select()
-    .single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ campaign: data });
+  await writeDB(db);
+  return NextResponse.json({ campaign: c });
 }
 
 export async function DELETE(request: Request, { params }: { params: { id: string } }) {
-  if (!server()) return notConfigured();
-  const { supabase, user } = await requireUser();
-  if (!user) return unauthorized();
-  const { error } = await supabase.from("campaigns").delete().eq("id", params.id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const deny = await needAuth(request);
+  if (deny) return deny;
+  const db = await readDB();
+  db.campaigns = db.campaigns.filter((x) => x.id !== params.id);
+  db.tasks = db.tasks.filter((x) => x.campaign_id !== params.id);
+  await writeDB(db);
   return NextResponse.json({ ok: true });
 }

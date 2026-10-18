@@ -1,33 +1,47 @@
 import { NextResponse } from "next/server";
-import { requireUser, unauthorized, notConfigured, server } from "../../../lib/api-auth";
-import { createHash } from "crypto";
+import { needAuth } from "../../../lib/api-auth";
+import { readDB, writeDB, logEvent, uid, nowISO, Task } from "../../../lib/db";
+
+function simpleHash(s: string): string {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h2 >>> 0).toString(16).padStart(8, "0") + (h1 >>> 0).toString(16).padStart(8, "0");
+}
+
+function withNames(db: Awaited<ReturnType<typeof readDB>>, tasks: Task[]) {
+  return tasks.map((t) => ({
+    ...t,
+    groups: db.groups.find((g) => g.id === t.group_id)
+      ? { name: db.groups.find((g) => g.id === t.group_id)!.name } : null,
+    campaigns: db.campaigns.find((c) => c.id === t.campaign_id)
+      ? { name: db.campaigns.find((c) => c.id === t.campaign_id)!.name,
+          tracking_code: db.campaigns.find((c) => c.id === t.campaign_id)!.tracking_code } : null,
+  }));
+}
 
 export async function GET(request: Request) {
-  if (!server()) return notConfigured();
-  const { supabase, user } = await requireUser();
-  if (!user) return unauthorized();
+  const deny = await needAuth(request);
+  if (deny) return deny;
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
   const campaign_id = searchParams.get("campaign_id");
 
-  let q = supabase
-    .from("tasks")
-    .select("*, groups(name,url), campaigns(name,tracking_code)")
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (status) q = q.eq("status", status);
-  if (campaign_id) q = q.eq("campaign_id", campaign_id);
-
-  const { data, error } = await q;
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ tasks: data });
+  const db = await readDB();
+  let tasks = [...db.tasks].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  if (status) tasks = tasks.filter((t) => t.status === status);
+  if (campaign_id) tasks = tasks.filter((t) => t.campaign_id === campaign_id);
+  return NextResponse.json({ tasks: withNames(db, tasks.slice(0, 200)) });
 }
 
-// Schedule: create one task per group for a campaign (idempotent)
 export async function POST(request: Request) {
-  if (!server()) return notConfigured();
-  const { supabase, user } = await requireUser();
-  if (!user) return unauthorized();
+  const deny = await needAuth(request);
+  if (deny) return deny;
   const body = await request.json();
   const { campaign_id, group_ids, scheduled_at, timezone } = body;
 
@@ -38,45 +52,38 @@ export async function POST(request: Request) {
     );
   }
 
-  // Verify campaign belongs to user and is enabled
-  const { data: campaign } = await supabase
-    .from("campaigns")
-    .select("id,enabled")
-    .eq("id", campaign_id)
-    .single();
+  const db = await readDB();
+  const campaign = db.campaigns.find((c) => c.id === campaign_id);
   if (!campaign) return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
   if (!campaign.enabled) {
     return NextResponse.json({ error: "Campaign is disabled" }, { status: 400 });
   }
 
-  const rows = group_ids.map((gid: string) => {
-    const key = createHash("sha256")
-      .update(`${campaign_id}|${gid}|${scheduled_at || "asap"}`)
-      .digest("hex")
-      .slice(0, 24);
-    return {
-      user_id: user.id,
+  const existingKeys = new Set(db.tasks.map((t) => t.idempotency_key));
+  let added = 0;
+  for (const gid of group_ids) {
+    const key = simpleHash(`${campaign_id}|${gid}|${scheduled_at || "asap"}`);
+    if (existingKeys.has(key)) continue; // idempotent — never duplicate
+    existingKeys.add(key);
+    const task: Task = {
+      id: uid(),
       group_id: gid,
       campaign_id,
       scheduled_at: scheduled_at || null,
       timezone: timezone || "Asia/Karachi",
       status: "queued",
+      post_link: null,
+      error: null,
+      attempts: 0,
       idempotency_key: key,
+      created_at: nowISO(),
+      updated_at: nowISO(),
     };
-  });
+    db.tasks.push(task);
+    added++;
+  }
 
-  // upsert on idempotency_key — duplicates are ignored, never double-created
-  const { data, error } = await supabase
-    .from("tasks")
-    .upsert(rows, { onConflict: "idempotency_key", ignoreDuplicates: true })
-    .select("id");
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  await supabase.from("activity_log").insert({
-    user_id: user.id,
-    event: "TASKS_SCHEDULED",
-    detail: `${group_ids.length} group(s) scheduled for campaign ${campaign_id}`,
-  });
-
-  return NextResponse.json({ scheduled: data?.length ?? 0 });
+  await logEvent(db, "TASKS_SCHEDULED", `${added} task(s) scheduled for campaign "${campaign.name}"`);
+  await writeDB(db);
+  return NextResponse.json({ scheduled: added });
 }

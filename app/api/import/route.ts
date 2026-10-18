@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireUser, unauthorized, notConfigured, server } from "../../../lib/api-auth";
+import { needAuth } from "../../../lib/api-auth";
+import { readDB, writeDB, logEvent, uid, nowISO } from "../../../lib/db";
 
-// POST CSV text -> creates groups. Expected header: name,url,country,category
 export async function POST(request: Request) {
-  if (!server()) return notConfigured();
-  const { supabase, user } = await requireUser();
-  if (!user) return unauthorized();
-
+  const deny = await needAuth(request);
+  if (deny) return deny;
   const body = await request.json();
   const csv = (body.csv || "") as string;
   if (!csv.trim()) {
@@ -26,46 +24,29 @@ export async function POST(request: Request) {
   const countryIdx = header.indexOf("country");
   const categoryIdx = header.indexOf("category");
 
-  const rows: any[] = [];
-  const errors: string[] = [];
   const urlRe = /^https?:\/\/(www\.)?facebook\.com\/groups\//;
+  const errors: string[] = [];
+  const db = await readDB();
+  let imported = 0;
 
   lines.slice(1).forEach((line, i) => {
-    // simple CSV split (no quoted commas) — good enough for URLs/names
     const cols = line.split(",").map((c) => c.trim());
     const name = cols[nameIdx] || "";
     const url = cols[urlIdx] || "";
-    if (!name || !url) {
-      errors.push(`Row ${i + 2}: missing name or url`);
-      return;
-    }
-    if (!urlRe.test(url)) {
-      errors.push(`Row ${i + 2}: not a Facebook group URL`);
-      return;
-    }
-    rows.push({
-      user_id: user.id,
+    if (!name || !url) { errors.push(`Row ${i + 2}: missing name or url`); return; }
+    if (!urlRe.test(url)) { errors.push(`Row ${i + 2}: not a Facebook group URL`); return; }
+    db.groups.push({
+      id: uid(),
       name,
       url,
       country: countryIdx >= 0 ? cols[countryIdx] || null : null,
       category: categoryIdx >= 0 ? cols[categoryIdx] || null : null,
+      created_at: nowISO(),
     });
+    imported++;
   });
 
-  let inserted = 0;
-  if (rows.length > 0) {
-    const { error, count } = await supabase
-      .from("groups")
-      .insert(rows, { count: "exact" });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    inserted = count ?? rows.length;
-  }
-
-  await supabase.from("activity_log").insert({
-    user_id: user.id,
-    event: "GROUPS_IMPORTED",
-    detail: `${inserted} imported, ${errors.length} skipped`,
-  });
-
-  return NextResponse.json({ imported: inserted, errors });
+  await logEvent(db, "GROUPS_IMPORTED", `${imported} imported, ${errors.length} skipped`);
+  await writeDB(db);
+  return NextResponse.json({ imported, errors });
 }
