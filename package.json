@@ -8,6 +8,8 @@
     "start": "next start"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.118.0",
     "autoprefixer": "^10.6.1",
     "next": "14.2.5",
     "postcss": "^8.5.30",
