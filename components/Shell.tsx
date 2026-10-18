@@ -6,6 +6,7 @@ const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
   { href: "/profiles", label: "Account Profiles", icon: "👤" },
   { href: "/groups", label: "Facebook Groups", icon: "👥" },
+  { href: "/folders", label: "Group Folders", icon: "📁" },
   { href: "/import", label: "Spreadsheet", icon: "📥" },
   { href: "/campaigns", label: "Campaign Manager", icon: "📣" },
   { href: "/media", label: "Image Library", icon: "🖼️" },

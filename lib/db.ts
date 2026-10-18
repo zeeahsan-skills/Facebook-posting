@@ -59,7 +59,7 @@ export type DB = {
   tasks: Task[];
   click_events: ClickEvent[];
   activity_log: LogRow[];
-  worker_control: { paused: boolean; updated_at: string };
+  worker_control: { paused: boolean; updated_at: string; agent_instructions: string };
   profiles: Profile[];
   assets: Asset[];
   posting_attempts: PostingAttempt[];
@@ -74,7 +74,11 @@ function emptyDB(): DB {
     tasks: [],
     click_events: [],
     activity_log: [],
-    worker_control: { paused: false, updated_at: new Date().toISOString() },
+    worker_control: {
+      paused: false,
+      updated_at: new Date().toISOString(),
+      agent_instructions: "",
+    },
     profiles: [],
     assets: [],
     posting_attempts: [],

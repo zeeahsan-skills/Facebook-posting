@@ -1,17 +1,22 @@
 "use client";
 import { useEffect, useState } from "react";
 import Shell from "../../components/Shell";
-import { btn, btnGhost, card } from "../../components/ui";
+import { input, btn, btnGhost, card, label } from "../../components/ui";
 
 export default function ControlPage() {
   const [paused, setPaused] = useState(false);
+  const [instructions, setInstructions] = useState("");
+  const [savedInstructions, setSavedInstructions] = useState("");
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   async function load() {
     const res = await fetch("/api/control");
     const data = await res.json();
     setPaused(data.paused ?? false);
+    setInstructions(data.agent_instructions || "");
+    setSavedInstructions(data.agent_instructions || "");
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
@@ -26,6 +31,17 @@ export default function ControlPage() {
     const data = await res.json();
     setPaused(data.paused);
     setToggling(false);
+  }
+
+  async function saveInstructions() {
+    setSaving(true);
+    await fetch("/api/control", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent_instructions: instructions }),
+    });
+    setSavedInstructions(instructions);
+    setSaving(false);
   }
 
   return (
@@ -72,6 +88,29 @@ export default function ControlPage() {
             <li>Duplicates are blocked by idempotency keys.</li>
             <li>Every decision is written to the activity log.</li>
           </ul>
+        </div>
+      </div>
+
+      <div className={`${card} mt-6 max-w-3xl`}>
+        <h2 className="mb-1 text-sm font-semibold text-zinc-200">🧠 Agent Instructions</h2>
+        <p className="mb-4 text-sm text-zinc-400">
+          Write plain-language rules for the agent (e.g. "Prioritize UK job groups on weekdays",
+          "Never post the same caption twice in one day"). The agent reads these before
+          selecting tasks. Deterministic safety rules always apply on top.
+        </p>
+        <textarea
+          className={`${input} min-h-[120px] font-mono text-xs`}
+          placeholder="e.g. Post job campaigns to UK groups first. Skip dating groups on Fridays. …"
+          value={instructions}
+          onChange={(e) => setInstructions(e.target.value)}
+        />
+        <div className="mt-3 flex items-center gap-3">
+          <button onClick={saveInstructions} disabled={saving || instructions === savedInstructions} className={btn}>
+            {saving ? "Saving…" : "Save instructions"}
+          </button>
+          {instructions !== savedInstructions && (
+            <span className="text-xs text-amber-300">Unsaved changes</span>
+          )}
         </div>
       </div>
     </Shell>
